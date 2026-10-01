@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -10,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .demo import DEMO_ROWS, DEMO_SPORTS
+from .demo import DEMO_SPORTS
 from .services.math_utils import norm_cdf
 from .services.model import grade_from_probability, sigma_for_market
 from .services.odds_api import OddsApiClient
@@ -18,6 +17,7 @@ from .services.pandascore import FIXTURE_GAMES, PandaScoreClient
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
+MODEL_VERSION = "market-ensemble-v2"
 
 
 @asynccontextmanager
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     await app.state.panda.close()
 
 
-app = FastAPI(title="DFS Edge Terminal", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="DFS Edge Terminal", version="2.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
@@ -56,10 +56,15 @@ async def index():
 
 @app.get("/api/health")
 async def health():
+    live = app.state.odds.configured()
+    esports = app.state.panda.configured()
     return {
         "ok": True,
-        "live_dfs_configured": app.state.odds.configured(),
-        "esports_configured": app.state.panda.configured(),
+        "mode": "live" if live else "credentials_required",
+        "live_dfs_configured": live,
+        "esports_configured": esports,
+        "model_version": MODEL_VERSION,
+        "odds_api": app.state.odds.quota_status(),
     }
 
 
@@ -68,6 +73,9 @@ async def config():
     return {
         "live_dfs_configured": app.state.odds.configured(),
         "esports_configured": app.state.panda.configured(),
+        "model_version": MODEL_VERSION,
+        "minimum_sportsbook_sources": app.state.odds.min_sources,
+        "comparison_bookmakers": app.state.odds.bookmakers,
         "dfs_providers": [
             {"key": "all", "label": "All DFS"},
             {"key": "prizepicks", "label": "PrizePicks"},
@@ -82,7 +90,8 @@ async def config():
 @app.get("/api/sports")
 async def sports(all_sports: bool = Query(False)):
     if not app.state.odds.configured():
-        return {"mode": "demo", "sports": DEMO_SPORTS}
+        # Catalog only: used to keep the UI navigable before the live key is added.
+        return {"mode": "catalog", "sports": DEMO_SPORTS}
     try:
         data = await app.state.odds.sports(all_sports=all_sports)
         return {"mode": "live", "sports": data}
@@ -96,8 +105,17 @@ async def board(
     provider: str = Query("all"),
 ):
     if not app.state.odds.configured():
-        rows = [r for r in DEMO_ROWS if sport in {"all", r["sport_key"]} and provider in {"all", r["provider_key"]}]
-        return {"mode": "demo", "sport_key": sport, "rows": rows, "events_scanned": 3, "warnings": ["Demo mode: configure ODDS_API_KEY for live DFS lines."]}
+        return {
+            "mode": "not_configured",
+            "sport_key": sport,
+            "rows": [],
+            "events_scanned": 0,
+            "warnings": ["Live feed unavailable until ODDS_API_KEY is configured on Railway."],
+            "thin_consensus_skipped": 0,
+            "unmodeled_skipped": 0,
+            "model_version": MODEL_VERSION,
+            "quota": app.state.odds.quota_status(),
+        }
     try:
         data = await app.state.odds.board(sport, provider=provider)
         data["mode"] = "live"
@@ -109,7 +127,7 @@ async def board(
 @app.get("/api/esports/games")
 async def esports_games():
     if not app.state.panda.configured():
-        return {"mode": "fallback", "games": [{"slug": g, "name": g.upper()} for g in FIXTURE_GAMES]}
+        return {"mode": "catalog", "games": [{"slug": g, "name": g.upper()} for g in FIXTURE_GAMES]}
     try:
         games = await app.state.panda.videogames(per_page=100)
         normalized = [
@@ -128,7 +146,7 @@ async def esports_upcoming(game: str = Query("csgo"), limit: int = Query(20, ge=
             "mode": "not_configured",
             "game": game,
             "matches": [],
-            "message": "Add PANDASCORE_TOKEN for live esports schedules/stats. You can still import esports DFS lines on the Import tab.",
+            "message": "Add PANDASCORE_TOKEN for live esports schedules/stats. Historical player stats also require an eligible PandaScore plan.",
         }
     try:
         matches = await app.state.panda.upcoming(game, per_page=limit)
@@ -162,13 +180,13 @@ async def analyze_import(payload: ImportPayload):
                 "source_count": 0, "method": "imported line awaiting projection",
             })
             continue
-        sigma = row.sigma or sigma_for_market(row.market, row.line, "Esports" if "esport" in row.sport.lower() else None)
+        sigma = row.sigma or sigma_for_market(row.market, row.line, "Esports" if "esport" in row.sport.lower() else "Other")
         p_over = norm_cdf((row.projection - row.line) / sigma)
         p_under = 1 - p_over
         rec_side = "MORE" if p_over >= p_under else "LESS"
         rec_prob = max(p_over, p_under)
         edge = row.projection - row.line
-        conf = round(min(92.0, 58 + min(22, abs(edge) / max(sigma, 1e-9) * 30)), 1)
+        conf = round(min(90.0, 55 + min(24, abs(edge) / max(sigma, 1e-9) * 28)), 1)
         out.append({
             "id": f"import:{idx}", "provider": row.provider, "provider_key": "imported", "sport": row.sport, "sport_key": "imported",
             "player": row.player, "market": row.market, "market_label": row.market.replace("_", " ").title(), "line": row.line,
@@ -177,7 +195,7 @@ async def analyze_import(payload: ImportPayload):
             "recommended_side": rec_side, "recommended_probability": round(rec_prob * 100, 1), "confidence": conf,
             "grade": grade_from_probability(rec_prob, conf), "source_count": 1, "consensus_line": row.projection, "line_spread": 0,
             "sigma": round(sigma, 3), "matchup": row.matchup or "Imported", "notes": [row.notes] if row.notes else [], "books": [],
-            "method": "user/imported projection → calibrated normal distribution",
+            "method": "user/imported projection → calibrated normal distribution", "model_version": "import-v1",
         })
     out.sort(key=lambda x: x.get("recommended_probability") or 0, reverse=True)
     return {"rows": out}
