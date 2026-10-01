@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#081018" />
+  <title>DFS Edge Terminal</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="noise"></div>
+  <header class="topbar">
+    <div class="brand-wrap">
+      <div class="brand-mark">E</div>
+      <div>
+        <div class="brand">EDGE//TERMINAL</div>
+        <div class="brand-sub">DFS projection intelligence</div>
+      </div>
+    </div>
+    <div class="status-wrap">
+      <span class="pill muted" id="dataMode">checking data</span>
+      <span class="clock" id="clock">--:--:--</span>
+    </div>
+  </header>
+
+  <div class="app-shell">
+    <aside class="sidebar">
+      <nav>
+        <button class="nav-item active" data-view="board"><span>◫</span> Edge Board</button>
+        <button class="nav-item" data-view="esports"><span>⌁</span> Esports Lab</button>
+        <button class="nav-item" data-view="import"><span>⇧</span> Import Board</button>
+        <button class="nav-item" data-view="method"><span>ƒ</span> Methodology</button>
+      </nav>
+      <div class="sidebar-block">
+        <div class="sidebar-label">DATA SOURCES</div>
+        <div class="source-row"><span class="dot" id="oddsDot"></span><span>The Odds API</span></div>
+        <div class="source-row"><span class="dot" id="pandaDot"></span><span>PandaScore</span></div>
+      </div>
+      <div class="sidebar-block compact">
+        <div class="sidebar-label">GUARDRAILS</div>
+        <p>Probabilities are model estimates, not guarantees. Use legal, authorized data access and follow DFS rules in your jurisdiction.</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section id="boardView" class="view active">
+        <div class="hero-row">
+          <div>
+            <div class="eyebrow">LIVE MODEL BOARD</div>
+            <h1>Find separation.<br><span>Measure the edge.</span></h1>
+            <p class="hero-copy">DFS lines normalized against de-vigged sportsbook consensus, with distribution-based hit rates, confidence scoring, and book-by-book evidence.</p>
+          </div>
+          <div class="hero-stat">
+            <div class="hero-stat-label">Top modeled edge</div>
+            <div class="hero-stat-value" id="topEdge">—</div>
+            <div class="hero-stat-meta" id="topEdgeMeta">Load a board to begin</div>
+          </div>
+        </div>
+
+        <div class="controls panel">
+          <div class="control-group grow">
+            <label>Sport</label>
+            <select id="sportSelect"></select>
+          </div>
+          <div class="control-group">
+            <label>DFS app</label>
+            <select id="providerSelect"></select>
+          </div>
+          <div class="control-group">
+            <label>Minimum probability</label>
+            <select id="probSelect">
+              <option value="50">50%+</option>
+              <option value="55" selected>55%+</option>
+              <option value="58">58%+</option>
+              <option value="60">60%+</option>
+              <option value="62">62%+</option>
+              <option value="65">65%+</option>
+            </select>
+          </div>
+          <div class="control-group grow">
+            <label>Search player / market</label>
+            <input id="searchInput" placeholder="e.g. passing yards" />
+          </div>
+          <button class="btn primary" id="refreshBtn">Refresh board</button>
+        </div>
+
+        <div class="metric-grid">
+          <div class="metric panel"><div class="metric-label">Edges found</div><div class="metric-value" id="edgeCount">0</div><div class="metric-foot">above active threshold</div></div>
+          <div class="metric panel"><div class="metric-label">A / A+</div><div class="metric-value" id="strongCount">0</div><div class="metric-foot">model-strength labels</div></div>
+          <div class="metric panel"><div class="metric-label">Avg sources</div><div class="metric-value" id="avgSources">0.0</div><div class="metric-foot">sportsbooks per projection</div></div>
+          <div class="metric panel"><div class="metric-label">Board freshness</div><div class="metric-value small" id="freshness">—</div><div class="metric-foot">last local refresh</div></div>
+        </div>
+
+        <div class="table-panel panel">
+          <div class="table-head">
+            <div>
+              <div class="section-title">Ranked edges</div>
+              <div class="section-sub" id="tableSub">Select a sport and refresh.</div>
+            </div>
+            <div class="legend"><span class="legend-dot more"></span> More <span class="legend-dot less"></span> Less</div>
+          </div>
+          <div class="loading hidden" id="loading"><div class="spinner"></div><span>Scanning events, DFS markets, and sportsbook prices…</span></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Grade</th><th>Player</th><th>Market</th><th>DFS</th><th>Line</th><th>Model</th><th>Pick</th><th>Prob.</th><th>Edge</th><th>Conf.</th><th>Sources</th>
+                </tr>
+              </thead>
+              <tbody id="boardBody"></tbody>
+            </table>
+          </div>
+          <div class="empty hidden" id="emptyState">
+            <div class="empty-icon">∅</div>
+            <div class="empty-title">No modeled rows yet</div>
+            <div class="empty-copy">This can happen when the selected DFS provider has no current props for that sport, or when sportsbook comparison markets are too thin.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="esportsView" class="view">
+        <div class="view-heading">
+          <div><div class="eyebrow">ESPORTS COVERAGE</div><h2>Esports Lab</h2><p>Upcoming fixtures from PandaScore, plus a universal DFS import path for CS2, LoL, Dota 2, Valorant and other titles.</p></div>
+        </div>
+        <div class="controls panel esports-controls">
+          <div class="control-group grow"><label>Game</label><select id="gameSelect"></select></div>
+          <button class="btn primary" id="loadEsportsBtn">Load fixtures</button>
+        </div>
+        <div class="panel esports-grid" id="esportsGrid"></div>
+      </section>
+
+      <section id="importView" class="view">
+        <div class="view-heading">
+          <div><div class="eyebrow">UNIVERSAL INGEST</div><h2>Import any DFS board</h2><p>Use this for esports or niche markets that your live feed does not expose. Include your own model projection for full probability and edge scoring.</p></div>
+        </div>
+        <div class="import-layout">
+          <div class="panel import-panel">
+            <div class="section-title">CSV / pasted data</div>
+            <div class="section-sub">Columns: provider, sport, player, market, line, projection, sigma, matchup, notes</div>
+            <input type="file" id="csvFile" accept=".csv,text/csv" />
+            <textarea id="csvText" spellcheck="false">provider,sport,player,market,line,projection,sigma,matchup,notes
+PrizePicks,Esports - CS2,Example Player,kills_maps_1_2,31.5,34.1,5.8,Team A vs Team B,Replace with your real exported line and projection</textarea>
+            <button class="btn primary full" id="analyzeImportBtn">Analyze imported board</button>
+          </div>
+          <div class="panel import-panel">
+            <div class="section-title">How the importer scores</div>
+            <div class="method-list">
+              <div><span>01</span><p><b>Projection vs line.</b> The raw difference is standardized by the stat's volatility.</p></div>
+              <div><span>02</span><p><b>Distribution estimate.</b> The engine converts the gap into More/Less hit probabilities.</p></div>
+              <div><span>03</span><p><b>Confidence.</b> Larger stable separation scores higher; missing projections are clearly flagged instead of fabricated.</p></div>
+            </div>
+          </div>
+        </div>
+        <div class="table-panel panel">
+          <div class="table-head"><div><div class="section-title">Imported analysis</div><div class="section-sub">No fabricated projections: rows without a projection remain unscored.</div></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Grade</th><th>Player</th><th>Market</th><th>DFS</th><th>Line</th><th>Model</th><th>Pick</th><th>Prob.</th><th>Edge</th><th>Conf.</th><th>Sources</th></tr></thead><tbody id="importBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="methodView" class="view">
+        <div class="view-heading"><div><div class="eyebrow">MODEL TRANSPARENCY</div><h2>How the engine thinks</h2><p>No mystery score. Every projection is built from traceable inputs and explicit assumptions.</p></div></div>
+        <div class="method-cards">
+          <div class="panel method-card"><div class="num">01</div><h3>Discover</h3><p>The app enumerates active sports, events and DFS player-prop markets instead of relying on a tiny hard-coded list.</p></div>
+          <div class="panel method-card"><div class="num">02</div><h3>Normalize</h3><p>PrizePicks, Underdog, Dabble and Pick6 lines are normalized into a common player / market / threshold schema.</p></div>
+          <div class="panel method-card"><div class="num">03</div><h3>De-vig</h3><p>Sportsbook Over/Under prices are converted to implied probabilities and the bookmaker margin is removed.</p></div>
+          <div class="panel method-card"><div class="num">04</div><h3>Infer</h3><p>Each fair market probability is mapped to an implied statistical mean using a volatility model. Sharp books receive modestly higher weight.</p></div>
+          <div class="panel method-card"><div class="num">05</div><h3>Ensemble</h3><p>The weighted implied means create a consensus projection. Market disagreement lowers confidence.</p></div>
+          <div class="panel method-card"><div class="num">06</div><h3>Score</h3><p>The DFS threshold is compared with the model mean to estimate More/Less probability, standardized edge and an interpretable confidence score.</p></div>
+        </div>
+        <div class="panel caveat">
+          <div class="section-title">Production upgrade path</div>
+          <p>The included engine is deliberately auditable. For a serious production model, calibrate market-specific variance from historical outcomes, layer in injuries/lineups/weather/pace/opponent efficiency, and backtest probability calibration by sport and stat. The architecture is designed so those models can replace or blend with the market-consensus baseline.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="drawer-backdrop hidden" id="drawerBackdrop"></div>
+  <aside class="drawer" id="drawer">
+    <button class="drawer-close" id="drawerClose">×</button>
+    <div id="drawerContent"></div>
+  </aside>
+
+  <div class="toast hidden" id="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
