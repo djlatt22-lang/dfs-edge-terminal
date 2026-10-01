@@ -1,20 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from statistics import mean, median, pstdev
+from statistics import median
 from typing import Iterable
 
 from .math_utils import devig_two_way, norm_cdf, norm_ppf
 
 
-# Approximate one-game / one-match standard deviations. They are fallbacks, not claims of universal truth.
-# Users should calibrate these against their own historical exports for production use.
+# One-game / one-match standard-deviation priors. These are intentionally conservative
+# fallbacks for converting fair market probabilities into implied stat means. Production
+# calibration should replace them with historical residual distributions by sport/market.
 MARKET_SIGMA = {
     # NFL / CFB
     "player_pass_yds": 55.0,
     "player_pass_attempts": 5.5,
     "player_pass_completions": 5.0,
     "player_pass_tds": 1.05,
+    "player_pass_interceptions": 0.85,
     "player_rush_yds": 28.0,
     "player_rush_attempts": 4.2,
     "player_reception_yds": 25.0,
@@ -32,6 +34,7 @@ MARKET_SIGMA = {
     "player_points_rebounds": 8.8,
     "player_rebounds_assists": 5.0,
     "player_blocks_steals": 1.7,
+    "player_turnovers": 1.7,
     # MLB
     "pitcher_strikeouts": 2.2,
     "pitcher_outs": 3.7,
@@ -47,13 +50,22 @@ MARKET_SIGMA = {
     "batter_fantasy_score": 4.6,
     # NHL
     "player_shots_on_goal": 1.45,
-    "player_points": 0.75,
-    "player_assists": 0.65,
     "player_goals": 0.48,
     "player_blocked_shots": 1.25,
     "player_total_saves": 5.8,
     # Soccer
+    "player_shots": 1.65,
     "player_shots_on_target": 1.05,
+    "player_tackles": 1.7,
+    # Tennis
+    "player_aces": 4.0,
+    "player_double_faults": 2.0,
+    "player_games_won": 3.8,
+    # Common esports count-style markets
+    "player_kills": 5.0,
+    "player_assists": 6.0,
+    "player_headshots": 5.0,
+    "player_map_kills": 4.0,
 }
 
 SPORT_CV = {
@@ -64,11 +76,12 @@ SPORT_CV = {
     "Soccer": 0.55,
     "Tennis": 0.28,
     "Esports": 0.25,
+    "Other": 0.32,
 }
 
 SHARP_WEIGHTS = {
-    "pinnacle": 1.65,
-    "circa": 1.55,
+    "pinnacle": 1.70,
+    "circa": 1.60,
     "fanduel": 1.15,
     "draftkings": 1.12,
     "caesars": 1.10,
@@ -80,11 +93,44 @@ SHARP_WEIGHTS = {
 DFS_BOOKS = {"prizepicks", "underdog", "dabble_us_dfs", "pick6"}
 
 
+def sport_group_from_key(sport_key: str | None, title: str | None = None) -> str:
+    key = (sport_key or "").lower()
+    if key.startswith("americanfootball_"):
+        return "American Football"
+    if key.startswith("basketball_"):
+        return "Basketball"
+    if key.startswith("baseball_"):
+        return "Baseball"
+    if key.startswith("icehockey_"):
+        return "Ice Hockey"
+    if key.startswith("soccer_"):
+        return "Soccer"
+    if key.startswith("tennis_"):
+        return "Tennis"
+    if key.startswith("esports_") or "esport" in key:
+        return "Esports"
+    t = (title or "").lower()
+    if any(x in t for x in ("nfl", "ncaa football", "football")):
+        return "American Football"
+    if any(x in t for x in ("nba", "wnba", "basketball")):
+        return "Basketball"
+    if any(x in t for x in ("mlb", "baseball")):
+        return "Baseball"
+    if any(x in t for x in ("nhl", "hockey")):
+        return "Ice Hockey"
+    if "soccer" in t:
+        return "Soccer"
+    if "tennis" in t:
+        return "Tennis"
+    if "esport" in t:
+        return "Esports"
+    return "Other"
+
+
 def sigma_for_market(market_key: str, line: float, sport_group: str | None = None) -> float:
     if market_key in MARKET_SIGMA:
         return MARKET_SIGMA[market_key]
-    cv = SPORT_CV.get(sport_group or "", 0.32)
-    # Keep sigma usable for low-count stats and large yardage stats.
+    cv = SPORT_CV.get(sport_group or "Other", SPORT_CV["Other"])
     return max(0.75, abs(float(line)) * cv)
 
 
@@ -108,6 +154,21 @@ class ConsensusProjection:
     line_spread: float
     confidence: float
     notes: list[str]
+    outliers_removed: int = 0
+
+
+def _robust_filter(values: list[tuple[float, float, float, BookPair]], sigma: float):
+    """Remove only extreme implied-mean outliers when the market has enough sources."""
+    if len(values) < 4:
+        return values, 0
+    med = median(v[0] for v in values)
+    deviations = [abs(v[0] - med) for v in values]
+    mad = median(deviations)
+    threshold = max(0.65 * sigma, 3.0 * mad if mad > 0 else 0.0)
+    kept = [v for v in values if abs(v[0] - med) <= threshold]
+    if len(kept) < 2:
+        return values, 0
+    return kept, len(values) - len(kept)
 
 
 def infer_projection(
@@ -122,7 +183,7 @@ def infer_projection(
         return None
 
     sigma = sigma_for_market(market_key, dfs_line, sport_group)
-    inferred: list[tuple[float, float, float]] = []  # mu, point, weight
+    inferred: list[tuple[float, float, float, BookPair]] = []
     notes: list[str] = []
 
     for pair in pairs:
@@ -130,28 +191,40 @@ def infer_projection(
         if fair is None:
             continue
         p_over, _ = fair
+        # Protect the inverse-CDF transform from pathological 0/1 inputs.
+        p_over = min(0.995, max(0.005, p_over))
         mu = float(pair.point) + sigma * norm_ppf(p_over)
-        weight = SHARP_WEIGHTS.get(pair.bookmaker, 0.9)
-        inferred.append((mu, float(pair.point), weight))
+        weight = SHARP_WEIGHTS.get(pair.bookmaker, 0.90)
+        inferred.append((mu, float(pair.point), weight, pair))
 
     if not inferred:
         return None
 
+    inferred, removed = _robust_filter(inferred, sigma)
+    if removed:
+        notes.append(f"Removed {removed} extreme sportsbook outlier{'s' if removed != 1 else ''}")
+
     total_weight = sum(x[2] for x in inferred)
-    projection = sum(mu * w for mu, _, w in inferred) / total_weight
-    consensus_line = sum(point * w for _, point, w in inferred) / total_weight
-    points = [p for _, p, _ in inferred]
+    projection = sum(mu * w for mu, _, w, _ in inferred) / total_weight
+    consensus_line = sum(point * w for _, point, w, _ in inferred) / total_weight
+    points = [p for _, p, _, _ in inferred]
     line_spread = (max(points) - min(points)) if len(points) > 1 else 0.0
 
     p_over_dfs = norm_cdf((projection - dfs_line) / sigma)
     p_under_dfs = 1 - p_over_dfs
 
-    # Confidence rewards independent market sources and agreement, but avoids implying certainty.
     source_score = min(1.0, len(inferred) / 6)
     disagreement = min(1.0, line_spread / max(sigma, 1e-9))
     edge_z = abs(projection - dfs_line) / max(sigma, 1e-9)
-    separation = min(1.0, edge_z / 0.8)
-    confidence = 42 + 24 * source_score + 16 * (1 - disagreement) + 14 * separation
+    separation = min(1.0, edge_z / 0.80)
+
+    confidence = 40 + 28 * source_score + 16 * (1 - disagreement) + 12 * separation
+    if len(inferred) == 1:
+        confidence = min(confidence, 52)
+    elif len(inferred) == 2:
+        confidence = min(confidence, 68)
+    elif len(inferred) == 3:
+        confidence = min(confidence, 80)
     confidence = round(min(96.0, max(35.0, confidence)), 1)
 
     if len(inferred) < 3:
@@ -171,17 +244,20 @@ def infer_projection(
         line_spread=round(line_spread, 3),
         confidence=confidence,
         notes=notes,
+        outliers_removed=removed,
     )
 
 
 def grade_from_probability(prob: float, confidence: float) -> str:
     # Labels describe model strength, not guaranteed outcomes.
-    effective = prob * (0.72 + 0.28 * (confidence / 100))
-    if effective >= 0.65:
+    effective = prob * (0.70 + 0.30 * (confidence / 100))
+    if confidence < 55:
+        return "C"
+    if effective >= 0.66 and confidence >= 78:
         return "A+"
-    if effective >= 0.61:
+    if effective >= 0.615 and confidence >= 70:
         return "A"
-    if effective >= 0.575:
+    if effective >= 0.58 and confidence >= 62:
         return "B+"
     if effective >= 0.545:
         return "B"
