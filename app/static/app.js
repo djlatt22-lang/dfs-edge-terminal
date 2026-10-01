@@ -1,8 +1,8 @@
-const state = { rows: [], filtered: [], config: null, sports: [] };
+const state = { rows: [], filtered: [], config: null, health: null, sports: [] };
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 
-function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),3200); }
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'),4200); }
 function esc(s){ return String(s ?? '').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
 function fmt(v,d=1){ return v===null||v===undefined||Number.isNaN(Number(v))?'—':Number(v).toFixed(d); }
 function clock(){ $('#clock').textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
@@ -20,10 +20,10 @@ $$('.nav-item').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.v
 async function init(){
   try{
     const [config, health, sports, egames] = await Promise.all([api('/api/config'), api('/api/health'), api('/api/sports'), api('/api/esports/games')]);
-    state.config=config; state.sports=sports.sports||[]; state.esportsGames=egames.games||[];
+    state.config=config; state.health=health; state.sports=sports.sports||[]; state.esportsGames=egames.games||[];
     $('#oddsDot').classList.toggle('on',health.live_dfs_configured);
     $('#pandaDot').classList.toggle('on',health.esports_configured);
-    $('#dataMode').textContent=health.live_dfs_configured?'LIVE DATA READY':'DEMO MODE';
+    $('#dataMode').textContent=health.live_dfs_configured?'LIVE FEED':'API KEY REQUIRED';
     $('#dataMode').className='pill '+(health.live_dfs_configured?'live':'muted');
     fillSelects();
     await loadBoard();
@@ -42,6 +42,11 @@ function fillSelects(){
   $('#gameSelect').innerHTML=games.map(x=>`<option value="${esc(x.slug)}">${esc(x.name||x.slug)}</option>`).join('');
 }
 
+function quotaLabel(q){
+  if(!q || q.remaining===null || q.remaining===undefined) return '';
+  return ` · API credits: ${q.remaining} remaining`;
+}
+
 async function loadBoard(){
   const sport=$('#sportSelect').value, provider=$('#providerSelect').value;
   $('#loading').classList.remove('hidden'); $('#emptyState').classList.add('hidden');
@@ -49,10 +54,15 @@ async function loadBoard(){
   try{
     const d=await api(`/api/board?sport=${encodeURIComponent(sport)}&provider=${encodeURIComponent(provider)}`);
     state.rows=d.rows||[];
-    $('#tableSub').textContent=`${d.events_scanned||0} events scanned · ${d.mode==='live'?'live feed':'demo sample'} · click any row for evidence`;
-    if(d.warnings?.length && d.mode==='live') toast(d.warnings[0]);
+    if(d.mode==='live'){
+      const skipped=(d.thin_consensus_skipped||0)+(d.unmodeled_skipped||0);
+      $('#tableSub').textContent=`${d.events_scanned||0} events scanned · ${state.rows.length} qualified props · ${skipped} skipped for weak/missing consensus${quotaLabel(d.quota)}`;
+    }else{
+      $('#tableSub').textContent='Live DFS credentials are not configured. No sample props are being shown.';
+    }
+    if(d.warnings?.length) toast(d.warnings[0]);
     applyFilters();
-    $('#freshness').textContent=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+    $('#freshness').textContent=d.mode==='live'?new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'offline';
   }catch(e){ toast(e.message); state.rows=[]; applyFilters(); }
   finally{$('#loading').classList.add('hidden');$('#refreshBtn').disabled=false;}
 }
@@ -65,7 +75,7 @@ function applyFilters(){
   $('#edgeCount').textContent=state.filtered.length;
   $('#strongCount').textContent=state.filtered.filter(r=>['A','A+'].includes(r.grade)).length;
   $('#avgSources').textContent=state.filtered.length?fmt(state.filtered.reduce((a,b)=>a+(b.source_count||0),0)/state.filtered.length,1):'0.0';
-  const top=state.filtered[0]; $('#topEdge').textContent=top?`${fmt(top.recommended_probability,1)}%`:'—'; $('#topEdgeMeta').textContent=top?`${top.player} · ${top.recommended_side} ${top.line}`:'No rows above threshold';
+  const top=state.filtered[0]; $('#topEdge').textContent=top?`${fmt(top.recommended_probability,1)}%`:'—'; $('#topEdgeMeta').textContent=top?`${top.player} · ${top.recommended_side} ${top.line}`:'No qualified live edge';
 }
 
 function gradeClass(g){return g==='A+'?'ap':g==='A'?'a':'b'}
@@ -86,12 +96,12 @@ function renderRows(sel,rows){
 }
 
 function openDrawer(r){
-  const books=(r.books||[]).map(b=>`<div class="book-row"><span>${esc(b.book)}</span><span class="mono">${fmt(b.line,1)}</span><span class="mono">${esc(b.over??'—')}</span><span class="mono">${esc(b.under??'—')}</span></div>`).join('')||'<div class="note">No sportsbook evidence attached to this imported/demo row.</div>';
+  const books=(r.books||[]).map(b=>`<div class="book-row"><span>${esc(b.book)}</span><span class="mono">${fmt(b.line,1)}</span><span class="mono">${esc(b.over??'—')}</span><span class="mono">${esc(b.under??'—')}</span></div>`).join('')||'<div class="note">No sportsbook evidence attached to this imported row.</div>';
   $('#drawerContent').innerHTML=`<div class="drawer-inner"><div class="drawer-kicker">${esc(r.provider)} · ${esc(r.sport)}</div><div class="drawer-title">${esc(r.player)}</div><div class="drawer-sub">${esc(r.market_label||r.market)} · ${esc(r.matchup||'')}</div>
     <div class="drawer-call"><div class="box"><div class="box-label">Model call</div><div class="box-value ${String(r.recommended_side).toLowerCase()==='more'?'edge-pos':'edge-neg'}">${esc(r.recommended_side)} ${fmt(r.line,1)}</div></div><div class="box"><div class="box-label">Hit estimate</div><div class="box-value">${r.recommended_probability==null?'—':fmt(r.recommended_probability,1)+'%'}</div></div><div class="box"><div class="box-label">Projection</div><div class="box-value">${fmt(r.projection,2)}</div></div><div class="box"><div class="box-label">Consensus line</div><div class="box-value">${fmt(r.consensus_line,2)}</div></div></div>
-    <div class="drawer-section"><div class="section-title">Model diagnostics</div><div class="method-list"><div><span>Δ</span><p>Raw edge: <b>${r.edge==null?'—':fmt(r.edge,3)}</b> · standardized: <b>${fmt(r.z_edge,3)}σ</b></p></div><div><span>σ</span><p>Modeled volatility: <b>${fmt(r.sigma,3)}</b> · line spread: <b>${fmt(r.line_spread,3)}</b></p></div><div><span>C</span><p>Confidence: <b>${fmt(r.confidence,1)}/100</b> · sources: <b>${r.source_count||0}</b></p></div></div></div>
+    <div class="drawer-section"><div class="section-title">Model diagnostics</div><div class="method-list"><div><span>Δ</span><p>Raw edge: <b>${r.edge==null?'—':fmt(r.edge,3)}</b> · standardized: <b>${fmt(r.z_edge,3)}σ</b></p></div><div><span>σ</span><p>Modeled volatility: <b>${fmt(r.sigma,3)}</b> · line spread: <b>${fmt(r.line_spread,3)}</b></p></div><div><span>C</span><p>Confidence: <b>${fmt(r.confidence,1)}/100</b> · sources: <b>${r.source_count||0}</b>${r.outliers_removed?` · outliers removed: <b>${r.outliers_removed}</b>`:''}</p></div></div></div>
     <div class="drawer-section"><div class="section-title">Sportsbook evidence</div><div class="book-row header"><span>Book</span><span>Line</span><span>Over</span><span>Under</span></div>${books}</div>
-    <div class="drawer-section"><div class="section-title">Notes</div><div class="notes">${(r.notes||[]).map(n=>`<div class="note">${esc(n)}</div>`).join('')||'<div class="note">No material model warnings.</div>'}<div class="note">Method: ${esc(r.method||'projection comparison')}</div></div></div>
+    <div class="drawer-section"><div class="section-title">Notes</div><div class="notes">${(r.notes||[]).map(n=>`<div class="note">${esc(n)}</div>`).join('')||'<div class="note">No material model warnings.</div>'}<div class="note">Method: ${esc(r.method||'projection comparison')}</div><div class="note">Version: ${esc(r.model_version||'—')}</div></div></div>
   </div>`;
   $('#drawer').classList.add('open'); $('#drawerBackdrop').classList.remove('hidden');
 }
@@ -101,7 +111,7 @@ $('#drawerClose').addEventListener('click',closeDrawer);$('#drawerBackdrop').add
 async function loadEsports(){
   const game=$('#gameSelect').value; const grid=$('#esportsGrid'); grid.innerHTML='<div class="match-card">Loading fixtures…</div>';
   try{ const d=await api(`/api/esports/upcoming?game=${encodeURIComponent(game)}&limit=24`);
-    if(d.mode!=='live'){grid.innerHTML=`<div class="match-card"><div class="match-league">Connector not configured</div><div class="match-name">PandaScore token needed</div><div class="match-meta">${esc(d.message)}</div></div>`;return}
+    if(d.mode!=='live'){grid.innerHTML=`<div class="match-card"><div class="match-league">Live connector not configured</div><div class="match-name">PandaScore token needed</div><div class="match-meta">${esc(d.message)}</div></div>`;return}
     grid.innerHTML=(d.matches||[]).map(m=>`<div class="match-card"><div class="match-league">${esc(m.league?.name||m.serie?.name||game)}</div><div class="match-name">${esc(m.name||'Upcoming match')}</div><div class="match-meta">${m.begin_at?new Date(m.begin_at).toLocaleString():'TBD'}<br>${esc(m.tournament?.name||'')}<br>Format: ${esc(m.number_of_games||'—')} games</div></div>`).join('')||'<div class="match-card">No upcoming fixtures returned.</div>';
   }catch(e){grid.innerHTML=`<div class="match-card">${esc(e.message)}</div>`}
 }
