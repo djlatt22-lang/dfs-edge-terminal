@@ -82,3 +82,10 @@ PrizePicks,Esports - CS2,Player Name,kills_maps_1_2,31.5,34.1,5.8,Team A vs Team
 ## Legal / operational note
 
 This project intentionally uses authorized API integrations and import workflows rather than relying on undocumented scraping. Make sure your deployment complies with provider terms, local law, DFS age restrictions and applicable contest rules.
+
+
+## Deploy DFS Projection Lab v2
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/djlatt22-lang/dfs-edge-terminal/tree/projection-lab-v2)
+
+Render will read the root `render.yaml`, create the Docker web service, and prompt for `PANDASCORE_TOKEN` because it is marked `sync: false`.
