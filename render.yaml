@@ -7,5 +7,5 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     envVars:
-      - key: PANDASCORE_TOKEN
+      - key: DFS_SPORTS_TOKEN
         sync: false
