@@ -12,7 +12,7 @@ A deployable DFS projection dashboard for PrizePicks, Underdog, Dabble and Draft
 - Scores More/Less probability, raw edge, standardized edge, confidence and an A+/A/B/C model-strength label.
 - Shows the sportsbook evidence behind each projection.
 - Supports live PrizePicks / Underdog / Dabble / DraftKings Pick6 where the upstream feed has coverage.
-- Adds PandaScore-powered esports fixture/stat endpoints plus a CSV importer so CS2 / LoL / Dota 2 / Valorant and other DFS boards can be analyzed even when the aggregator does not expose their lines.
+- Adds a sports-only DFS projection lab with live DFS feed access, batch-board analysis, and Monte Carlo prop modeling.
 - Runs in demo mode with no keys, so the UI can be evaluated immediately.
 
 ## Quick start
@@ -40,7 +40,7 @@ docker compose up --build
 ### `ODDS_API_KEY`
 Used for current sports, events, DFS sites and sportsbook comparison markets. The app discovers event markets first and only requests the player-prop markets currently seen for DFS books. This reduces false assumptions about what is available on a given slate.
 
-### `PANDASCORE_TOKEN`
+### `DFS_SPORTS_TOKEN`
 Optional. Used for esports schedules and historical/player-stat endpoints. Deep historical player stats require an eligible PandaScore plan.
 
 ## Data architecture
@@ -88,4 +88,4 @@ This project intentionally uses authorized API integrations and import workflows
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/djlatt22-lang/dfs-edge-terminal/tree/projection-lab-v2)
 
-Render will read the root `render.yaml`, create the Docker web service, and prompt for `PANDASCORE_TOKEN` because it is marked `sync: false`.
+Render will read the root `render.yaml`, create the Docker web service, and prompt for `DFS_SPORTS_TOKEN` because it is marked `sync: false`.
