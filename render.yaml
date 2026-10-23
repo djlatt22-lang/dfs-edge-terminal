@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: dfs-projection-lab
+    runtime: docker
+    branch: projection-lab-v2
+    repo: https://github.com/djlatt22-lang/dfs-edge-terminal
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: PANDASCORE_TOKEN
+        sync: false
