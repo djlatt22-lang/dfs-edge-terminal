@@ -63,9 +63,14 @@ MARKET_SIGMA = {
     "player_games_won": 3.8,
     # Common esports count-style markets
     "player_kills": 5.0,
-    "player_assists": 6.0,
     "player_headshots": 5.0,
     "player_map_kills": 4.0,
+}
+
+# Overrides for markets whose keys are shared across sports.
+# A unique (sport_group, market_key) key prevents dictionary key collisions.
+SPORT_MARKET_SIGMA = {
+    ("Esports", "player_assists"): 6.0,
 }
 
 SPORT_CV = {
@@ -128,6 +133,9 @@ def sport_group_from_key(sport_key: str | None, title: str | None = None) -> str
 
 
 def sigma_for_market(market_key: str, line: float, sport_group: str | None = None) -> float:
+    override = SPORT_MARKET_SIGMA.get((sport_group, market_key))
+    if override is not None:
+        return override
     if market_key in MARKET_SIGMA:
         return MARKET_SIGMA[market_key]
     cv = SPORT_CV.get(sport_group or "Other", SPORT_CV["Other"])
