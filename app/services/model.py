@@ -190,6 +190,15 @@ def infer_projection(
     if not pairs:
         return None
 
+    # One book is one independent source, even if its market contains
+    # duplicate/alternate prices. Use the closest line deterministically.
+    unique_books = {}
+    for pair in pairs:
+        current = unique_books.get(pair.bookmaker)
+        if current is None or abs(pair.point - dfs_line) < abs(current.point - dfs_line):
+            unique_books[pair.bookmaker] = pair
+    pairs = list(unique_books.values())
+
     sigma = sigma_for_market(market_key, dfs_line, sport_group)
     inferred: list[tuple[float, float, float, BookPair]] = []
     notes: list[str] = []
