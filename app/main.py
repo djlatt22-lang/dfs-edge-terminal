@@ -13,11 +13,12 @@ from .demo import DEMO_SPORTS
 from .services.math_utils import norm_cdf
 from .services.model import grade_from_probability, sigma_for_market
 from .services.odds_api import OddsApiClient
+from .services.research_api import router as research_router
 from .services.pandascore import FIXTURE_GAMES, PandaScoreClient
 
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
-MODEL_VERSION = "market-ensemble-v2"
+MODEL_VERSION = "market-ensemble-v2-research-guard"
 
 
 @asynccontextmanager
@@ -29,7 +30,8 @@ async def lifespan(app: FastAPI):
     await app.state.panda.close()
 
 
-app = FastAPI(title="DFS Edge Terminal", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="DFS Edge Terminal", version="2.1.0", lifespan=lifespan)
+app.include_router(research_router)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
@@ -193,9 +195,10 @@ async def analyze_import(payload: ImportPayload):
             "projection": round(row.projection, 3), "edge": round(edge, 3), "edge_pct": round(edge / max(abs(row.line), 1.0) * 100, 2),
             "z_edge": round(edge / max(sigma, 1e-9), 3), "over_probability": round(p_over * 100, 1), "under_probability": round(p_under * 100, 1),
             "recommended_side": rec_side, "recommended_probability": round(rec_prob * 100, 1), "confidence": conf,
-            "grade": grade_from_probability(rec_prob, conf), "source_count": 1, "consensus_line": row.projection, "line_spread": 0,
+            "grade": "RESEARCH", "heuristic_grade": grade_from_probability(rec_prob, conf),
+            "calibration_status": "NOT_VALIDATED", "source_count": 1, "consensus_line": row.projection, "line_spread": 0,
             "sigma": round(sigma, 3), "matchup": row.matchup or "Imported", "notes": [row.notes] if row.notes else [], "books": [],
-            "method": "user/imported projection → calibrated normal distribution", "model_version": "import-v1",
+            "method": "user/imported projection → uncalibrated normal approximation", "model_version": "import-v1",
         })
     out.sort(key=lambda x: x.get("recommended_probability") or 0, reverse=True)
     return {"rows": out}
