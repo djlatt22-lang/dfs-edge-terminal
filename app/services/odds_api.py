@@ -236,7 +236,7 @@ class OddsApiClient:
             "thin_consensus_skipped": thin_skipped,
             "unmodeled_skipped": unmodeled_skipped,
             "quota": self.quota_status(),
-            "model_version": "market-ensemble-v2",
+            "model_version": "market-ensemble-v2-research-guard",
         }
 
     @staticmethod
@@ -338,7 +338,13 @@ class OddsApiClient:
                         "recommended_side": rec_side,
                         "recommended_probability": round(rec_prob * 100, 1),
                         "confidence": projection.confidence,
-                        "grade": grade,
+                        "grade": "RESEARCH",
+                        "heuristic_grade": grade,
+                        "calibration_status": "NOT_VALIDATED",
+                        "provider_book_last_update": book.get("last_update"),
+                        "line_observed_at": None,
+                        "line_source": "The Odds API DFS feed; not independently confirmed in provider app",
+                        "injury_role_weather_verified": False,
                         "source_count": projection.source_count,
                         "consensus_line": projection.consensus_line,
                         "line_spread": projection.line_spread,
@@ -351,7 +357,7 @@ class OddsApiClient:
                         "commence_time": event.get("commence_time"),
                         "notes": projection.notes,
                         "books": evidence_index.get((mkey, identity_key), []),
-                        "method": "de-vigged multi-book consensus → robust implied distribution",
+                        "method": "de-vigged sportsbook consensus → assumed normal distribution; NOT historical calibration",
                         "model_version": "market-ensemble-v2",
                     })
 

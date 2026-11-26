@@ -48,7 +48,7 @@
           <div>
             <div class="eyebrow">LIVE MODEL BOARD</div>
             <h1>Find separation.<br><span>Measure the edge.</span></h1>
-            <p class="hero-copy">DFS lines normalized against de-vigged sportsbook consensus, with distribution-based hit rates, confidence scoring, and book-by-book evidence.</p>
+            <p class="hero-copy">DFS lines normalized against de-vigged sportsbook consensus, with uncalibrated model probabilities, heuristic strength scoring, and book-by-book evidence.</p>
           </div>
           <div class="hero-stat">
             <div class="hero-stat-label">Top modeled edge</div>
@@ -86,7 +86,7 @@
 
         <div class="metric-grid">
           <div class="metric panel"><div class="metric-label">Edges found</div><div class="metric-value" id="edgeCount">0</div><div class="metric-foot">above active threshold</div></div>
-          <div class="metric panel"><div class="metric-label">A / A+</div><div class="metric-value" id="strongCount">0</div><div class="metric-foot">model-strength labels</div></div>
+          <div class="metric panel"><div class="metric-label">Certified A / A+</div><div class="metric-value" id="strongCount">0</div><div class="metric-foot">Requires out-of-sample calibration</div></div>
           <div class="metric panel"><div class="metric-label">Avg sources</div><div class="metric-value" id="avgSources">0.0</div><div class="metric-foot">sportsbooks per projection</div></div>
           <div class="metric panel"><div class="metric-label">Board freshness</div><div class="metric-value small" id="freshness">—</div><div class="metric-foot">last local refresh</div></div>
         </div>
@@ -104,7 +104,7 @@
             <table>
               <thead>
                 <tr>
-                  <th>Grade</th><th>Player</th><th>Market</th><th>DFS</th><th>Line</th><th>Model</th><th>Pick</th><th>Prob.</th><th>Edge</th><th>Conf.</th><th>Sources</th>
+                  <th>Grade</th><th>Player</th><th>Market</th><th>DFS</th><th>Line</th><th>Model</th><th>Pick</th><th>Est. Prob.</th><th>Edge</th><th>Heuristic</th><th>Sources</th>
                 </tr>
               </thead>
               <tbody id="boardBody"></tbody>
@@ -147,7 +147,7 @@ PrizePicks,Esports - CS2,Example Player,kills_maps_1_2,31.5,34.1,5.8,Team A vs T
             <div class="method-list">
               <div><span>01</span><p><b>Projection vs line.</b> The raw difference is standardized by the stat's volatility.</p></div>
               <div><span>02</span><p><b>Distribution estimate.</b> The engine converts the gap into More/Less hit probabilities.</p></div>
-              <div><span>03</span><p><b>Confidence.</b> Larger stable separation scores higher; missing projections are clearly flagged instead of fabricated.</p></div>
+              <div><span>03</span><p><b>Heuristic strength.</b> Larger separation produces a stronger diagnostic score, not a calibrated confidence percentage; missing projections are not invented.</p></div>
             </div>
           </div>
         </div>
